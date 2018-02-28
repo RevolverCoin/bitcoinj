@@ -331,6 +331,8 @@
                             <value>src/test/resources/logging.properties</value>
                         </property>
                     </systemProperties>
+
+                    <skipTests>true</skipTests>
                 </configuration>
             </plugin>
 
@@ -340,6 +342,16 @@
                 <artifactId>coveralls-maven-plugin</artifactId>
                 <version>3.1.0</version>
             </plugin>
+
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-gpg-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+
         </plugins>
     </build>
 

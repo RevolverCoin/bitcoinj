@@ -27,6 +27,7 @@ import org.bitcoinj.wallet.Wallet;
 import org.slf4j.*;
 
 import javax.annotation.*;
+import java.math.BigInteger;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.*;
@@ -485,7 +486,8 @@ public abstract class AbstractBlockChain {
             } else {
                 checkState(lock.isHeldByCurrentThread());
                 // It connects to somewhere on the chain. Not necessarily the top of the best known chain.
-                params.checkDifficultyTransitions(storedPrev, block, blockStore);
+                //params.checkDifficultyTransitions(storedPrev, block, blockStore);
+                checkDifficultyTransitions(storedPrev, block);
                 connectBlock(block, storedPrev, shouldVerifyTransactions(), filteredTxHashList, filteredTxn);
             }
 
@@ -497,7 +499,13 @@ public abstract class AbstractBlockChain {
             lock.unlock();
         }
     }
-
+    /**
+     * Throws an exception if the blocks difficulty is not correct.
+     */
+    private void checkDifficultyTransitions(StoredBlock storedPrev, Block nextBlock) throws BlockStoreException, VerificationException {
+        checkState(lock.isHeldByCurrentThread());
+        DarkGravityWave3(storedPrev, nextBlock);
+    }
     /**
      * Returns the hashes of the currently stored orphan blocks and then deletes them from this objects storage.
      * Used by Peer when a filter exhaustion event has occurred and thus any orphan blocks that have been downloaded
@@ -609,6 +617,141 @@ public abstract class AbstractBlockChain {
             if (haveNewBestChain)
                 handleNewBestChain(storedPrev, newBlock, block, expensiveChecks);
         }
+    }
+
+
+    private void DarkGravityWave3(StoredBlock storedPrev, Block nextBlock) {
+        /* current difficulty formula, darkcoin - DarkGravity v3, written by Evan Duffield - evan@darkcoin.io */
+        StoredBlock BlockLastSolved = storedPrev;
+        StoredBlock BlockReading = storedPrev;
+        Block BlockCreating = nextBlock;
+        BlockCreating = BlockCreating;
+        long nActualTimespan = 0;
+        long LastBlockTime = 0;
+        long PastBlocksMin = 24;
+        long PastBlocksMax = 24;
+        long CountBlocks = 0;
+        BigInteger PastDifficultyAverage = BigInteger.ZERO;
+        BigInteger PastDifficultyAveragePrev = BigInteger.ZERO;
+
+        if (BlockLastSolved == null || BlockLastSolved.getHeight() == 0 || BlockLastSolved.getHeight() < PastBlocksMin) {
+            verifyDifficulty(params.getMaxTarget(), storedPrev, nextBlock);
+            return;
+        }
+
+        for (int i = 1; BlockReading != null && BlockReading.getHeight() > 0; i++) {
+            if (PastBlocksMax > 0 && i > PastBlocksMax) { break; }
+            CountBlocks++;
+
+            if(CountBlocks <= PastBlocksMin) {
+                if (CountBlocks == 1) { PastDifficultyAverage = BlockReading.getHeader().getDifficultyTargetAsInteger(); }
+                else { PastDifficultyAverage = ((PastDifficultyAveragePrev.multiply(BigInteger.valueOf(CountBlocks)).add(BlockReading.getHeader().getDifficultyTargetAsInteger()).divide(BigInteger.valueOf(CountBlocks + 1)))); }
+                PastDifficultyAveragePrev = PastDifficultyAverage;
+            }
+
+            if(LastBlockTime > 0){
+                long Diff = (LastBlockTime - BlockReading.getHeader().getTimeSeconds());
+                nActualTimespan += Diff;
+            }
+            LastBlockTime = BlockReading.getHeader().getTimeSeconds();
+
+            try {
+                StoredBlock BlockReadingPrev = blockStore.get(BlockReading.getHeader().getPrevBlockHash());
+                if (BlockReadingPrev == null)
+                {
+                    //assert(BlockReading); break;
+                    return;
+                }
+                BlockReading = BlockReadingPrev;
+            }
+            catch(BlockStoreException x)
+            {
+                return;
+            }
+        }
+
+        BigInteger bnNew= PastDifficultyAverage;
+
+        long nTargetTimespan = CountBlocks*params.TARGET_SPACING;//nTargetSpacing;
+
+        if (nActualTimespan < nTargetTimespan/3)
+            nActualTimespan = nTargetTimespan/3;
+        if (nActualTimespan > nTargetTimespan*3)
+            nActualTimespan = nTargetTimespan*3;
+
+        // Retarget
+        bnNew = bnNew.multiply(BigInteger.valueOf(nActualTimespan));
+        bnNew = bnNew.divide(BigInteger.valueOf(nTargetTimespan));
+        verifyDifficulty(bnNew, storedPrev, nextBlock);
+
+    }
+    private void verifyDifficulty(BigInteger calcDiff, StoredBlock storedPrev, Block nextBlock)
+    {
+        if (calcDiff.compareTo(params.getMaxTarget()) > 0) {
+            log.info("Difficulty hit proof of work limit: {}", calcDiff.toString(16));
+            calcDiff = params.getMaxTarget();
+        }
+        int accuracyBytes = (int) (nextBlock.getDifficultyTarget() >>> 24) - 3;
+        BigInteger receivedDifficulty = nextBlock.getDifficultyTargetAsInteger();
+
+        // The calculated difficulty is to a higher precision than received, so reduce here.
+        BigInteger mask = BigInteger.valueOf(0xFFFFFFL).shiftLeft(accuracyBytes * 8);
+        calcDiff = calcDiff.and(mask);
+        if(params.getId().compareTo(params.ID_TESTNET) == 0)
+        {
+            if (calcDiff.compareTo(receivedDifficulty) != 0)
+                throw new VerificationException("Network provided difficulty bits do not match what was calculated: " +
+                        receivedDifficulty.toString(16) + " vs " + calcDiff.toString(16));
+        }
+        else
+        {
+            int height = storedPrev.getHeight() + 1;
+            if(false && height <= 68589)
+            {
+                long nBitsNext = nextBlock.getDifficultyTarget();
+
+                long calcDiffBits = (accuracyBytes+3) << 24;
+                calcDiffBits |= calcDiff.shiftRight(accuracyBytes*8).longValue();
+
+                double n1 = ConvertBitsToDouble(calcDiffBits);
+                double n2 = ConvertBitsToDouble(nBitsNext);
+
+
+
+
+                if(java.lang.Math.abs(n1-n2) > n1*0.2)
+                    throw new VerificationException("Network provided difficulty bits do not match what was calculated: " +
+                            receivedDifficulty.toString(16) + " vs " + calcDiff.toString(16));
+
+
+            }
+            else
+            {
+                if (calcDiff.compareTo(receivedDifficulty) != 0)
+                    throw new VerificationException("Network provided difficulty bits do not match what was calculated: " +
+                            receivedDifficulty.toString(16) + " vs " + calcDiff.toString(16));
+            }
+        }
+    }
+
+    static double ConvertBitsToDouble(long nBits){
+        long nShift = (nBits >> 24) & 0xff;
+
+        double dDiff =
+                (double)0x0000ffff / (double)(nBits & 0x00ffffff);
+
+        while (nShift < 29)
+        {
+            dDiff *= 256.0;
+            nShift++;
+        }
+        while (nShift > 29)
+        {
+            dDiff /= 256.0;
+            nShift--;
+        }
+
+        return dDiff;
     }
 
     private void informListenersForNewBlock(final Block block, final NewBlockType newBlockType,

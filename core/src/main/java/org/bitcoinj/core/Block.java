@@ -22,6 +22,7 @@ import com.google.common.base.*;
 import com.google.common.collect.*;
 import org.bitcoinj.script.*;
 import org.slf4j.*;
+import org.revolvercoin.crypto.X11Evo;
 
 import javax.annotation.*;
 import java.io.*;
@@ -117,7 +118,7 @@ public class Block extends Message {
         super(params);
         // Set up a few basic things. We are not complete after this though.
         version = setVersion;
-        difficultyTarget = 0x1d07fff8L;
+        difficultyTarget = 0x1e00ffffL;
         time = System.currentTimeMillis() / 1000;
         prevBlockHash = Sha256Hash.ZERO_HASH;
 
@@ -216,7 +217,11 @@ public class Block extends Message {
      * </p>
      */
     public Coin getBlockInflation(int height) {
-        return FIFTY_COINS.shiftRight(height / params.getSubsidyDecreaseBlockCount());
+        Coin subsidy                   = FIFTY_COINS.shiftRight(height / params.getSubsidyDecreaseBlockCount());
+        Coin blockRewardMinimumCoin    = COIN.multiply(2);
+        if (subsidy.isLessThan(blockRewardMinimumCoin))
+            subsidy = blockRewardMinimumCoin;
+        return subsidy;
     }
 
     /**
@@ -259,7 +264,7 @@ public class Block extends Message {
         time = readUint32();
         difficultyTarget = readUint32();
         nonce = readUint32();
-        hash = Sha256Hash.wrapReversed(Sha256Hash.hashTwice(payload, offset, cursor - offset));
+        hash = Sha256Hash.wrapReversed(X11Evo.x11Digest(payload, offset, cursor - offset, time));
         headerBytesValid = serializer.isParseRetainMode();
 
         // transactions
@@ -406,7 +411,7 @@ public class Block extends Message {
         try {
             ByteArrayOutputStream bos = new UnsafeByteArrayOutputStream(HEADER_SIZE);
             writeHeader(bos);
-            return Sha256Hash.wrapReversed(Sha256Hash.hashTwice(bos.toByteArray()));
+            return Sha256Hash.wrapReversed(X11Evo.x11Digest(bos.toByteArray(), time));
         } catch (IOException e) {
             throw new RuntimeException(e); // Cannot happen.
         }
@@ -429,6 +434,7 @@ public class Block extends Message {
     public Sha256Hash getHash() {
         if (hash == null)
             hash = calculateHash();
+        hash = calculateHash();
         return hash;
     }
 
