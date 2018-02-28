@@ -734,6 +734,11 @@ public abstract class AbstractBlockChain {
         }
     }
 
+    /**
+     * TODO: refactor Gravity Well
+     * ConvertBitsToDouble is not used currently
+     */
+
     static double ConvertBitsToDouble(long nBits){
         long nShift = (nBits >> 24) & 0xff;
 
