@@ -504,8 +504,118 @@ public abstract class AbstractBlockChain {
      */
     private void checkDifficultyTransitions(StoredBlock storedPrev, Block nextBlock) throws BlockStoreException, VerificationException {
         checkState(lock.isHeldByCurrentThread());
-        DarkGravityWave3(storedPrev, nextBlock);
+
+
+        final long      	BlocksTargetSpacing			= (long)(1 * 60); // block per 1 minute
+        int         		TimeDaySeconds				= 60 * 60 * 24; // 1 day
+        long				PastSecondsMin				= TimeDaySeconds * 25 / 1000;
+        long				PastSecondsMax				= TimeDaySeconds * 7;
+        long				PastBlocksMin				= PastSecondsMin / BlocksTargetSpacing;
+        long				PastBlocksMax				= PastSecondsMax / BlocksTargetSpacing;
+
+        KimotoGravityWell(storedPrev, nextBlock, BlocksTargetSpacing, PastBlocksMin, PastBlocksMax);
     }
+
+    private void KimotoGravityWell(StoredBlock storedPrev, Block nextBlock, long TargetBlocksSpacingSeconds, long PastBlocksMin, long PastBlocksMax)  throws BlockStoreException, VerificationException {
+	/* current difficulty formula, megacoin - kimoto gravity well */
+        //const CBlockIndex  *BlockLastSolved				= pindexLast;
+        //const CBlockIndex  *BlockReading				= pindexLast;
+        //const CBlockHeader *BlockCreating				= pblock;
+        StoredBlock         BlockLastSolved             = storedPrev;
+        StoredBlock         BlockReading                = storedPrev;
+        Block               BlockCreating               = nextBlock;
+
+        BlockCreating				= BlockCreating;
+        long				PastBlocksMass				= 0;
+        long				PastRateActualSeconds		= 0;
+        long				PastRateTargetSeconds		= 0;
+        double				PastRateAdjustmentRatio		= 1f;
+        BigInteger			PastDifficultyAverage = BigInteger.valueOf(0);
+        BigInteger			PastDifficultyAveragePrev = BigInteger.valueOf(0);;
+        double				EventHorizonDeviation;
+        double				EventHorizonDeviationFast;
+        double				EventHorizonDeviationSlow;
+
+        long start = System.currentTimeMillis();
+
+        if (BlockLastSolved == null || BlockLastSolved.getHeight() == 0 || (long)BlockLastSolved.getHeight() < PastBlocksMin)
+        { verifyDifficulty(params.getMaxTarget(), storedPrev, nextBlock); }
+
+        int i = 0;
+        long LatestBlockTime = BlockLastSolved.getHeader().getTimeSeconds();
+
+        for (i = 1; BlockReading != null && BlockReading.getHeight() > 0; i++) {
+            if (PastBlocksMax > 0 && i > PastBlocksMax) { break; }
+            PastBlocksMass++;
+
+            if (i == 1)	{ PastDifficultyAverage = BlockReading.getHeader().getDifficultyTargetAsInteger(); }
+            else		{ PastDifficultyAverage = ((BlockReading.getHeader().getDifficultyTargetAsInteger().subtract(PastDifficultyAveragePrev)).divide(BigInteger.valueOf(i)).add(PastDifficultyAveragePrev)); }
+            PastDifficultyAveragePrev = PastDifficultyAverage;
+
+
+            if (BlockReading.getHeight() > 646120 && LatestBlockTime < BlockReading.getHeader().getTimeSeconds()) {
+                //eliminates the ability to go back in time
+                LatestBlockTime = BlockReading.getHeader().getTimeSeconds();
+            }
+
+            PastRateActualSeconds			= BlockLastSolved.getHeader().getTimeSeconds() - BlockReading.getHeader().getTimeSeconds();
+            PastRateTargetSeconds			= TargetBlocksSpacingSeconds * PastBlocksMass;
+            PastRateAdjustmentRatio			= 1.0f;
+            if (BlockReading.getHeight() > 646120){
+                //this should slow down the upward difficulty change
+                if (PastRateActualSeconds < 5) { PastRateActualSeconds = 5; }
+            }
+            else {
+                if (PastRateActualSeconds < 0) { PastRateActualSeconds = 0; }
+            }
+            if (PastRateActualSeconds != 0 && PastRateTargetSeconds != 0) {
+                PastRateAdjustmentRatio			= (double)PastRateTargetSeconds / PastRateActualSeconds;
+            }
+            EventHorizonDeviation			= 1 + (0.7084 * java.lang.Math.pow((Double.valueOf(PastBlocksMass)/Double.valueOf(28.2)), -1.228));
+            EventHorizonDeviationFast		= EventHorizonDeviation;
+            EventHorizonDeviationSlow		= 1 / EventHorizonDeviation;
+
+            if (PastBlocksMass >= PastBlocksMin) {
+                if ((PastRateAdjustmentRatio <= EventHorizonDeviationSlow) || (PastRateAdjustmentRatio >= EventHorizonDeviationFast))
+                {
+                    /*assert(BlockReading)*/;
+                    break;
+                }
+            }
+            StoredBlock BlockReadingPrev = blockStore.get(BlockReading.getHeader().getPrevBlockHash());
+            if (BlockReadingPrev == null)
+            {
+                //assert(BlockReading);
+                //Since we are using the checkpoint system, there may not be enough blocks to do this diff adjust, so skip until we do
+                //break;
+                return;
+            }
+            BlockReading = BlockReadingPrev;
+        }
+
+        /*CBigNum bnNew(PastDifficultyAverage);
+        if (PastRateActualSeconds != 0 && PastRateTargetSeconds != 0) {
+            bnNew *= PastRateActualSeconds;
+            bnNew /= PastRateTargetSeconds;
+        } */
+        //log.info("KGW-J, {}, {}, {}", storedPrev.getHeight(), i, System.currentTimeMillis() - start);
+        BigInteger newDifficulty = PastDifficultyAverage;
+        if (PastRateActualSeconds != 0 && PastRateTargetSeconds != 0) {
+            newDifficulty = newDifficulty.multiply(BigInteger.valueOf(PastRateActualSeconds));
+            newDifficulty = newDifficulty.divide(BigInteger.valueOf(PastRateTargetSeconds));
+        }
+
+        if (newDifficulty.compareTo(params.getMaxTarget()) > 0) {
+            log.info("Difficulty hit proof of work limit: {}", newDifficulty.toString(16));
+            newDifficulty = params.getMaxTarget();
+        }
+
+
+        //log.info("KGW-j Difficulty Calculated: {}", newDifficulty.toString(16));
+        verifyDifficulty(newDifficulty, storedPrev, nextBlock);
+
+    }
+
     /**
      * Returns the hashes of the currently stored orphan blocks and then deletes them from this objects storage.
      * Used by Peer when a filter exhaustion event has occurred and thus any orphan blocks that have been downloaded
@@ -574,6 +684,9 @@ public abstract class AbstractBlockChain {
             log.debug("Chain is now {} blocks high, running listeners", newStoredBlock.getHeight());
             informListenersForNewBlock(block, NewBlockType.BEST_CHAIN, filteredTxHashList, filteredTxn, newStoredBlock);
         } else {
+
+
+
             // This block connects to somewhere other than the top of the best known chain. We treat these differently.
             //
             // Note that we send the transactions to the wallet FIRST, even if we're about to re-organize this block
@@ -583,6 +696,7 @@ public abstract class AbstractBlockChain {
             if (haveNewBestChain) {
                 log.info("Block is causing a re-organize");
             } else {
+
                 StoredBlock splitPoint = findSplit(newBlock, head, blockStore);
                 if (splitPoint != null && splitPoint.equals(newBlock)) {
                     // newStoredBlock is a part of the same chain, there's no fork. This happens when we receive a block
@@ -697,6 +811,8 @@ public abstract class AbstractBlockChain {
         // The calculated difficulty is to a higher precision than received, so reduce here.
         BigInteger mask = BigInteger.valueOf(0xFFFFFFL).shiftLeft(accuracyBytes * 8);
         calcDiff = calcDiff.and(mask);
+        int height = storedPrev.getHeight() + 1;
+
         if(params.getId().compareTo(params.ID_TESTNET) == 0)
         {
             if (calcDiff.compareTo(receivedDifficulty) != 0)
@@ -705,7 +821,6 @@ public abstract class AbstractBlockChain {
         }
         else
         {
-            int height = storedPrev.getHeight() + 1;
             if(false && height <= 68589)
             {
                 long nBitsNext = nextBlock.getDifficultyTarget();
@@ -716,18 +831,14 @@ public abstract class AbstractBlockChain {
                 double n1 = ConvertBitsToDouble(calcDiffBits);
                 double n2 = ConvertBitsToDouble(nBitsNext);
 
-
-
-
                 if(java.lang.Math.abs(n1-n2) > n1*0.2)
                     throw new VerificationException("Network provided difficulty bits do not match what was calculated: " +
                             receivedDifficulty.toString(16) + " vs " + calcDiff.toString(16));
 
-
             }
             else
             {
-                if (calcDiff.compareTo(receivedDifficulty) != 0)
+                if (height > 36 && calcDiff.compareTo(receivedDifficulty) != 0)
                     throw new VerificationException("Network provided difficulty bits do not match what was calculated: " +
                             receivedDifficulty.toString(16) + " vs " + calcDiff.toString(16));
             }

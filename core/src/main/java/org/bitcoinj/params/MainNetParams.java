@@ -36,7 +36,7 @@ public class MainNetParams extends AbstractBitcoinNetParams {
         super();
         interval = INTERVAL;
         targetTimespan = TARGET_TIMESPAN;
-        maxTarget = Utils.decodeCompactBits(0x1e00ffffL);
+        maxTarget = Utils.decodeCompactBits(0x1f00ffffL);
         dumpedPrivateKeyHeader = 128;
         addressHeader = 0;
         p2shHeader = 5;
@@ -70,18 +70,14 @@ public class MainNetParams extends AbstractBitcoinNetParams {
         checkpoints.put(50000, Sha256Hash.wrap("0000000005f8b1855d2502bf0885d1eb91ae9b699c05e07f53e3112bdf7f2c4d"));
         checkpoints.put(98719, Sha256Hash.wrap("000000004e6a5f1d35bdd28c02a1097b74f2e931f931c55b4fff738ac5cc6658"));
 
-        dnsSeeds = new String[] {
-        };
-        httpSeeds = new HttpDiscovery.Details[] {
-//                // Andreas Schildbach
-//                new HttpDiscovery.Details(
-//                        ECKey.fromPublicOnly(Utils.HEX.decode("0238746c59d46d5408bf8b1d0af5740fe1a6e1703fcb56b2953f0b965c740d256f")),
-//                        URI.create("http://httpseed.bitcoin.schildbach.de/peers")
-//                )
+        dnsSeeds = null;
+        httpSeeds = null;
+
+        addrSeeds = new int[]{
+                0x904cee02, 0xb0d6d666, 0xb0094e0a, 0xb23e427c,
+                0x253b153a, 0x2e65769a, 0x2e65cbe2
         };
 
-        addrSeeds = new int[] {
-        };
     }
 
     private static MainNetParams instance;

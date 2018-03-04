@@ -76,7 +76,8 @@ public class MultiplexingDiscovery implements PeerDiscovery {
      * Will query the given seeds in parallel before producing a merged response.
      */
     public MultiplexingDiscovery(NetworkParameters params, List<PeerDiscovery> seeds) {
-        checkArgument(!seeds.isEmpty());
+        // TODO Revolver: seeds are empty
+        // checkArgument(!seeds.isEmpty());
         this.netParams = params;
         this.seeds = seeds;
     }

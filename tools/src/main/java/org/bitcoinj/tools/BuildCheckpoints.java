@@ -125,7 +125,7 @@ public class BuildCheckpoints {
             @Override
             public void notifyNewBestBlock(StoredBlock block) throws VerificationException {
                 int height = block.getHeight();
-                if (height % params.getInterval() == 0 && block.getHeader().getTimeSeconds() <= timeAgo) {
+                if (height % (params.getInterval() * 10) == 0 && block.getHeader().getTimeSeconds() <= timeAgo) {
                     System.out.println(String.format("Checkpointing block %s at height %d, time %s",
                             block.getHeader().getHash(), block.getHeight(), Utils.dateTimeFormat(block.getHeader().getTime())));
                     checkpoints.put(height, block);
@@ -204,15 +204,10 @@ public class BuildCheckpoints {
         checkState(manager.numCheckpoints() == expectedSize);
 
         if (params.getId().equals(NetworkParameters.ID_MAINNET)) {
-            StoredBlock test = manager.getCheckpointBefore(1390500000); // Thu Jan 23 19:00:00 CET 2014
-            checkState(test.getHeight() == 280224);
+            StoredBlock test = manager.getCheckpointBefore(1513377406); // 2017-12-15T22:36:46Z
+            checkState(test.getHeight() == 806400);
             checkState(test.getHeader().getHashAsString()
-                    .equals("00000000000000000b5d59a15f831e1c45cb688a4db6b0a60054d49a9997fa34"));
-        } else if (params.getId().equals(NetworkParameters.ID_TESTNET)) {
-            StoredBlock test = manager.getCheckpointBefore(1390500000); // Thu Jan 23 19:00:00 CET 2014
-            checkState(test.getHeight() == 167328);
-            checkState(test.getHeader().getHashAsString()
-                    .equals("0000000000035ae7d5025c2538067fe7adb1cf5d5d9c31b024137d9090ed13a9"));
+                    .equals("000000002eb89127c34f52b4a2be6e382a32efb2c92ec497818f74626874f451"));
         }
     }
 }
