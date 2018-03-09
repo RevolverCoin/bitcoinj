@@ -68,7 +68,12 @@ public class MultiplexingDiscovery implements PeerDiscovery {
             if (dnsSeeds != null)
                 for (String dnsSeed : dnsSeeds)
                     discoveries.add(new DnsSeedDiscovery(params, dnsSeed));
+
+            int [] addrSeeds  = params.getAddrSeeds();
+            if (addrSeeds != null)
+                discoveries.add(new SeedPeers(params));
         }
+
         return new MultiplexingDiscovery(params, discoveries);
     }
 
@@ -76,8 +81,7 @@ public class MultiplexingDiscovery implements PeerDiscovery {
      * Will query the given seeds in parallel before producing a merged response.
      */
     public MultiplexingDiscovery(NetworkParameters params, List<PeerDiscovery> seeds) {
-        // TODO Revolver: seeds are empty
-        // checkArgument(!seeds.isEmpty());
+        checkArgument(!seeds.isEmpty());
         this.netParams = params;
         this.seeds = seeds;
     }
